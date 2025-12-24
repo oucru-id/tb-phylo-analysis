@@ -9,6 +9,7 @@ log.info """
 
 include { PHYLO_ANALYSIS } from './workflows/phylo.nf'
 include { VISUALIZATION }  from './workflows/visualization.nf'
+include { CONSENSUS } from './workflows/consensus.nf'
 include { VERSIONS }       from './workflows/utils.nf'
 
 workflow {
@@ -17,5 +18,6 @@ workflow {
 
     PHYLO_ANALYSIS(fhir_ch, ref_ch)
     VISUALIZATION(PHYLO_ANALYSIS.out.matrix, PHYLO_ANALYSIS.out.metadata, PHYLO_ANALYSIS.out.tree)
+    CONSENSUS(fhir_ch, ref_ch)
     VERSIONS()
 }
