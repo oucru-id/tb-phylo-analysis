@@ -1,0 +1,10 @@
+.git
+results
+work
+__pycache__
+*.pyc
+*.pyo
+*.swp
+.env
+.DS_Store
+output/

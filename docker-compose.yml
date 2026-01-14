@@ -1,0 +1,13 @@
+services:
+  pipeline:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    working_dir: /opt/pipeline
+    volumes:
+      - ./output:/workspace
+    env_file:
+      - .env
+    environment:
+      - PIPELINE_RESULTS_DIR=/workspace/results
+    command: ["nextflow","run","main.nf"]

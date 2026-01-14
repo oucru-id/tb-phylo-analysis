@@ -1,0 +1,10 @@
+results/
+work/
+.nextflow*
+.nfcache
+.nextflow.log
+__pycache__/
+*.pyc
+.env
+.DS_Store
+output/

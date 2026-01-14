@@ -19,6 +19,10 @@ process FETCH_FROM_FHIR {
     val url
     val auth
     val since
+    val token_url
+    val client_id
+    val client_secret
+    val scope
 
     output:
     path "*.json", emit: json_files
@@ -29,6 +33,10 @@ process FETCH_FROM_FHIR {
     python3 $baseDir/scripts/fetch_fhir_data.py \\
         --url "${url}" \\
         --auth "${auth}" \\
+        --token-url "${token_url}" \\
+        --client-id "${client_id}" \\
+        --client-secret "${client_secret}" \\
+        --scope "${scope}" \\
         $date_arg
     """
 }
@@ -39,7 +47,15 @@ workflow {
     if (params.fhir_server_url && params.fhir_server_url != "null") {
         log.info "Using FHIR Server: ${params.fhir_server_url}"
         
-        FETCH_FROM_FHIR(params.fhir_server_url, params.fhir_server_auth, params.fetch_since)
+        FETCH_FROM_FHIR(
+            params.fhir_server_url,
+            params.fhir_server_auth,
+            params.fetch_since,
+            params.fhir_oauth_token_url,
+            params.fhir_client_id,
+            params.fhir_client_secret,
+            params.fhir_scope
+        )
         fhir_ch = FETCH_FROM_FHIR.out.json_files.flatten()
     } else {
         log.info "Using Local Directory: ${params.fhir_dir}"

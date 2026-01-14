@@ -62,7 +62,31 @@ process RUN_AUGUR {
     augur tree \
       --alignment aligned.fasta \
       --nthreads ${task.cpus} \
+      --method ${params.augur_tree_method} \
       --output tree.nwk
+    
+    EXTRA_FLAGS=""
+    if [ "${params.augur_enable_timetree}" = "true" ]; then
+      EXTRA_FLAGS="--timetree --coalescent opt --date-confidence --date-inference marginal --clock-rate 1e-7"
+    else
+      HAS_VALID_DATES=\$(python3 - << 'PY'
+import pandas as pd
+try:
+    df = pd.read_csv('nextstrain_metadata.tsv', sep='\\t')
+    if 'date' in df.columns:
+        vals = [str(x).strip() for x in df['date'].dropna() if str(x).strip() and str(x).strip().upper() != 'NA']
+        uniq = set(vals)
+        print("yes" if len(uniq) >= 2 else "no")
+    else:
+        print("no")
+except Exception:
+    print("no")
+PY
+      )
+      if [ "\$HAS_VALID_DATES" = "yes" ]; then
+        EXTRA_FLAGS="--timetree --coalescent opt --date-confidence --date-inference marginal --clock-rate 1e-7"
+      fi
+    fi
 
     augur refine \
       --tree tree.nwk \
@@ -70,11 +94,7 @@ process RUN_AUGUR {
       --metadata ${metadata} \
       --output-tree refined.nwk \
       --output-node-data branch_lengths.json \
-      --timetree \
-      --coalescent opt \
-      --date-confidence \
-      --date-inference marginal \
-      --clock-rate 1e-7
+      \$EXTRA_FLAGS
 
     augur traits \
       --tree refined.nwk \
