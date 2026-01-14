@@ -30,7 +30,6 @@ def parse_fhir(file_path):
         "conclusion": "NA"
     }
     
-    variant_count = 0
     if 'entry' in data:
         for entry in data['entry']:
             res = entry.get('resource', {})
@@ -38,7 +37,6 @@ def parse_fhir(file_path):
 
             if r_type == 'Patient':
                 metadata["patient_id"] = res.get('id', 'NA')
-                
                 for addr in res.get('address', []):
                     for ext in addr.get('extension', []):
                         if ext.get('url') == 'http://hl7.org/fhir/StructureDefinition/geolocation':
@@ -50,14 +48,9 @@ def parse_fhir(file_path):
 
             elif r_type == 'DiagnosticReport':
                 conclusions = []
-                
                 for cc in res.get('conclusionCode', []):
-                    if cc.get('text'):
-                        conclusions.append(cc.get('text'))
-
-                if res.get('conclusion'):
-                    conclusions.append(res.get('conclusion'))
-                
+                    if cc.get('text'): conclusions.append(cc.get('text'))
+                if res.get('conclusion'): conclusions.append(res.get('conclusion'))
                 if conclusions:
                     seen = set()
                     unique_conclusions = [x for x in conclusions if not (x in seen or seen.add(x))]
@@ -75,39 +68,29 @@ def parse_fhir(file_path):
                         for c in comp.get('code', {}).get('coding', []):
                             code = c.get('code')
                             if code == '81254-5': 
-                                if 'valueRange' in comp:
-                                    pos = comp['valueRange'].get('low', {}).get('value')
-                                elif 'valueInteger' in comp:
-                                    pos = comp.get('valueInteger')
+                                if 'valueRange' in comp: pos = comp['valueRange'].get('low', {}).get('value')
+                                elif 'valueInteger' in comp: pos = comp.get('valueInteger')
 
                     if alt is None or pos is None:
                         hgvs_candidates = []
-                        
                         vcc = res.get('valueCodeableConcept', {}).get('coding', [])
                         for c in vcc:
-                            if 'hgvs' in c.get('system', '') or ':' in c.get('code', ''):
-                                hgvs_candidates.append(c.get('code'))
-
+                            if 'hgvs' in c.get('system', '') or ':' in c.get('code', ''): hgvs_candidates.append(c.get('code'))
                         for comp in res.get('component', []):
                             vcc = comp.get('valueCodeableConcept', {}).get('coding', [])
                             for c in vcc:
-                                if 'hgvs' in c.get('system', '') or ':' in c.get('code', ''):
-                                    hgvs_candidates.append(c.get('code'))
+                                if 'hgvs' in c.get('system', '') or ':' in c.get('code', ''): hgvs_candidates.append(c.get('code'))
                         
                         for hgvs_str in hgvs_candidates:
                             if not hgvs_str: continue
-                            
                             match = re.search(r'g\.(\d+)[ACGTN]+>([ACGTN]+)', hgvs_str)
                             if match:
-                                if pos is None:
-                                    pos = int(match.group(1))
-                                if alt is None:
-                                    alt = match.group(2)
+                                if pos is None: pos = int(match.group(1))
+                                if alt is None: alt = match.group(2)
                                 break 
 
                     if pos is not None and alt:
                         variants[pos] = alt
-                        variant_count += 1
                         
     return sample_id, variants, metadata
 
@@ -134,13 +117,11 @@ def main():
         writer.writeheader()
         writer.writerows(all_metadata)
 
-    sorted_positions = sorted(list(all_variant_positions))
     samples = list(sample_variants.keys())
     
-    if not sorted_positions:
-        print("No variants found.")
+    sorted_positions = sorted(list(all_variant_positions))
+    snp_seqs = []
     
-    seqs = []
     for sid in samples:
         vars = sample_variants[sid]
         s_chars = []
@@ -150,13 +131,13 @@ def main():
                 s_chars.append(base[0])
             else:
                 s_chars.append('N')
-        seqs.append("".join(s_chars))
+        snp_seqs.append("".join(s_chars))
 
     n = len(samples)
     matrix_data = [[0]*n for _ in range(n)]
     for i in range(n):
         for j in range(i+1, n):
-            dist = sum(1 for k in range(len(seqs[i])) if seqs[i][k] != seqs[j][k])
+            dist = sum(1 for k in range(len(snp_seqs[i])) if snp_seqs[i][k] != snp_seqs[j][k])
             matrix_data[i][j] = dist
             matrix_data[j][i] = dist
             
@@ -165,8 +146,8 @@ def main():
         for i, row in enumerate(matrix_data):
             f.write(samples[i] + "\t" + "\t".join(map(str, row)) + "\n")
 
-    if len(seqs) > 0 and len(seqs[0]) > 0:
-        aln_records = [SeqRecord(Seq(s), id=i) for s, i in zip(seqs, samples)]
+    if len(snp_seqs) > 0 and len(snp_seqs[0]) > 0:
+        aln_records = [SeqRecord(Seq(s), id=i, description="") for s, i in zip(snp_seqs, samples)]
         aln = MultipleSeqAlignment(aln_records)
         calculator = DistanceCalculator('identity')
         dm = calculator.get_distance(aln)
@@ -174,8 +155,27 @@ def main():
         tree = constructor.nj(dm)
         Phylo.write(tree, "phylo_tree.nwk", "newick")
     else:
-        with open("phylo_tree.nwk", "w") as f:
-            f.write("();")
+        with open("phylo_tree.nwk", "w") as f: f.write("();")
+
+    # For Federated Nextstrain
+    
+    full_genome_records = []
+    ref_list = list(ref_seq) 
+    
+    for sid in samples:
+        vars = sample_variants[sid]
+        sample_seq_list = ref_list[:] 
+        
+        for pos, alt in vars.items():
+            idx = pos - 1
+            if 0 <= idx < len(sample_seq_list):
+                sample_seq_list[idx] = alt[0] 
+        
+        full_seq = "".join(sample_seq_list)
+        full_genome_records.append(SeqRecord(Seq(full_seq), id=sid, description=""))
+
+    with open("consensus.fasta", "w") as output_handle:
+        SeqIO.write(full_genome_records, output_handle, "fasta")
 
 if __name__ == "__main__":
     main()
