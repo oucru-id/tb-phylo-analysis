@@ -13,13 +13,13 @@ from Bio.Align import MultipleSeqAlignment
 
 def load_reference(ref_path):
     record = SeqIO.read(ref_path, "fasta")
-    return str(record.seq)
+    return str(record.seq), record.id
 
 def parse_fhir(file_path):
     with open(file_path, 'r') as f:
         data = json.load(f)
     
-    sample_id = os.path.basename(file_path).replace('.fhir.json', '').replace('.merged', '')
+    sample_id = os.path.basename(file_path).replace('.fhir.json', '').replace('.merged', '').replace('.json', '')
     variants = {} 
     
     metadata = {
@@ -98,12 +98,37 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--inputs', nargs='+', required=True, help="List of FHIR JSON files")
     parser.add_argument('--reference', required=True, help="Reference genome FASTA")
+    parser.add_argument('--anchors', nargs='*', default=[], help="List of Anchor FHIR JSON files")
     args = parser.parse_args()
 
-    ref_seq = load_reference(args.reference)
+    ref_seq, ref_name = load_reference(args.reference)
+    ref_seq = ref_seq.upper()
+    
     all_variant_positions = set()
     sample_variants = {}
     all_metadata = []
+
+    ref_id = "H37Rv" 
+    sample_variants[ref_id] = {}
+    all_metadata.append({
+        "sample_id": ref_id,
+        "patient_id": "Reference",
+        "latitude": "NA",
+        "longitude": "NA",
+        "conclusion": "Reference Genome"
+    })
+
+    for f in args.anchors:
+        sid, vars, meta = parse_fhir(f)
+        meta['patient_id'] = "Reference"
+        if meta['conclusion'] == "NA":
+            meta['conclusion'] = "Anchor"
+        else:
+            meta['conclusion'] = meta['conclusion'] + " (Anchor)"
+            
+        sample_variants[sid] = vars
+        all_metadata.append(meta)
+        all_variant_positions.update(vars.keys())
 
     for f in args.inputs:
         sid, vars, meta = parse_fhir(f)
@@ -137,7 +162,12 @@ def main():
     matrix_data = [[0]*n for _ in range(n)]
     for i in range(n):
         for j in range(i+1, n):
-            dist = sum(1 for k in range(len(snp_seqs[i])) if snp_seqs[i][k] != snp_seqs[j][k])
+            val1 = snp_seqs[i]
+            val2 = snp_seqs[j]
+            dist = 0
+            for k in range(len(val1)):
+                if val1[k] != 'N' and val2[k] != 'N' and val1[k] != val2[k]:
+                    dist += 1
             matrix_data[i][j] = dist
             matrix_data[j][i] = dist
             
@@ -156,8 +186,6 @@ def main():
         Phylo.write(tree, "phylo_tree.nwk", "newick")
     else:
         with open("phylo_tree.nwk", "w") as f: f.write("();")
-
-    # For Federated Nextstrain
     
     full_genome_records = []
     ref_list = list(ref_seq) 
