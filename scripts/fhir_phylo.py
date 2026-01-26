@@ -183,6 +183,28 @@ def main():
         dm = calculator.get_distance(aln)
         constructor = DistanceTreeConstructor()
         tree = constructor.nj(dm)
+        
+        outgroup_clade = None
+        
+        for meta in all_metadata:
+            conclusion = meta.get('conclusion', '')
+            if 'lineage5' in conclusion.lower().replace(' ', '') or 'lineage 5' in conclusion.lower():
+                for clade in tree.get_terminals():
+                    if clade.name == meta['sample_id']:
+                        outgroup_clade = clade
+                        break
+            if outgroup_clade:
+                break
+        
+        if not outgroup_clade:
+            for clade in tree.get_terminals():
+                if clade.name == ref_id:
+                    outgroup_clade = clade
+                    break
+        
+        if outgroup_clade:
+            tree.root_with_outgroup(outgroup_clade)
+        
         Phylo.write(tree, "phylo_tree.nwk", "newick")
     else:
         with open("phylo_tree.nwk", "w") as f: f.write("();")
